@@ -114,6 +114,23 @@ class CincyConda:
 
     def Init(self,
              help: bool = False) -> None:
+        """
+        Initializes conda in the user's shell
+
+        Parameters
+        ----------
+        shell : str, optional
+            The shell to initialize conda in, by default 'bash'
+        help : bool, optional
+            Whether to print the help message, by default False
+
+        Returns
+        -------
+        None. Initializes conda in the user's shell.
+
+        
+
+        Raises
         # check the shell input
         assert self.shell in ['bash', 'zsh', 'fish', 'powershell', 'xonsh'], \
             f"shell: '{self.shell}' is not supported. Please use one of the following: \
@@ -151,30 +168,49 @@ delete it and create a new one."
 
             # check if the package is in the CincyPy channel
             assert len(missing_packages) == 0, \
-                f"Package: {', '.join([p for p in missing_packages])} is not in the CincyPy channel. Please use a package \
-from the CincyPy channel, or submit a request to add the package to the CincyPy channel using the \
-Request method."
+                f"Package: {', '.join([p for p in missing_packages])} is not in the \
+CincyPy channel. Please use a package from the CincyPy channel, or submit a request \
+to add the package to the CincyPy channel using the Request method."
 
 
         # create the env with name=self.name and path=self.path
         os.system(f"{self.conda} create --prefix {self.path} -y")
 
         # create the kernel
-        os.system(f"python -m ipykernel install --user --name {self.name} --display-name {self.name}")
+        os.system(f"python -m ipykernel install --user --name {self.name} \
+--display-name {self.name}")
 
         # if the base env is not activated, activate it
         self._activate_base()
 
-    def Remove(self, env:str):
+    def Remove(self,
+               env:str = None,
+               package:str = None,
+               help:bool = False):
         """
-        Removes a CinycConda environment from the system. Cannot be used to remove the base
-        environment.
+        Removes a CinycConda environment from the system. Cannot be used to remove
+        the base environment.
         """
-        assert env.name != 'base', \
-            f"CincyConda cannot be used to remove the base environment. To remove another \
-environment, use the conda command line tool."
+        if help:
+            msg = os.system(f"{self.conda} env remove --help")
+        else:
+                
+            # make sure the env is not the base env
+            assert env.name.lower() != 'base', \
+                "CincyConda cannot be used to remove the base environment."
 
-        
+            # make sure the env is not the current env
+            assert env.name.lower() != self.name.lower(), \
+                f"Cannot remove the current environment: {self.name}"
+
+            # make sure the env is in the list of envs
+            assert env in self.env(), \
+                f"Could not find environment: {env}. Please use one of the following: \
+{self.env()}"
+
+            # remove the env
+            subprocess.run([f"{self.conda}", "env", "remove",
+                            "--name", f"{env.name}", "-y"])
 
     def update(self, package):
         # if the base env is not activated, activate it
@@ -189,8 +225,9 @@ environment, use the conda command line tool."
     def _activate_env(self,
                       env:str = "base") -> None:
         """
-        This is a helper function used in the `Activate` method. It activates the environment
-        indicated by env. If no environment is provided, the base environment is activated.
+        This is a helper function used in the `Activate` method. It activates the
+        environment indicated by `env`. If no environment is provided, the base
+        environment is activated.
 
         It is not intended to be used directly.
 
@@ -204,22 +241,22 @@ environment, use the conda command line tool."
         None. Activates the environment indicated by env, prints a message to the console.
         """
         if env=="base":
-            os.system(f"conda activate base")
-            print(f"Activated base environment")
+            os.system("conda activate base")
+            print("Activated base environment")
         else:
             os.system(f"conda activate {env}")
             print(f"Activated environment: {env}")
 
     def Activate(self, env:str = 'base'):
         """
-        Activates a CincyConda environment. If no environment is provided, the base environment
-        is activated.
+        Activates a CincyConda environment. If no environment is provided, the base
+        environment is activated.
         """
         assert hasattr(self, 'conda'), \
             f"conda_install_path is not set. Please set it to the path of your conda \
-                installation. Try '{CONDA_INSTALL_PATH}'"
+installation. Try '{CONDA_INSTALL_PATH}'"
         assert hasattr(sys, 'base_prefix'), \
-            f"sys.base_prefix: '{sys.base_prefix}' is not set"
+f"sys.base_prefix: '{sys.base_prefix}' is not set"
 
         # activate the env indicated by env, or the base env if no env is provided
         if env == 'base':
@@ -228,8 +265,9 @@ environment, use the conda command line tool."
             # check that the env exists, and if it does, activate it
             try:
                 assert self.env(env) is not None, \
-                    f"""Could not find environment: {env}. Please use one of the following: 
-                    {self.env()}"""
+                    f"""Could not find environment: {env}. Please use one of the \
+following: 
+{self.env()}"""
                 self._activate_env(env)
 
             # if the env does not exist, print an error message and
@@ -238,15 +276,66 @@ environment, use the conda command line tool."
                 print(e)
                 self._activate_env('base')
 
-    
+    def Install(self,
+                env:str = None,
+                package:str = None,
+                help:bool = False):
+        """
+        Installs a package into the current environment. If no package is provided,
+        nothing happens.
 
+        Parameters
+        ----------
+        env : str, optional
+            The name of the environment to install the package into, by
+            default None. If no environment is provided, the package is installed
+            into the current environment.
+        package : str, optional
+            The name of the package to install, by default None
+        help : bool, optional
+            Whether to print the help message, by default False
 
-    def install(self, package):
-        # if the base env is not activated, activate it
-        self._activate_base()
+        Returns
+        -------
+        None. Installs the package into the current environment.
+
+        Raises
+        ------
+        AssertionError
+            If the package is not a string
+        AssertionError
+            If the package is not in the CincyPy channel
+
+        Example Usage
+        -------------
+        >>> from CincyConda import CincyConda
+        >>> env = CincyConda(name='test', packages=['numpy', 'pandas'])
+        >>> env.Install(package='numpy')
+
+        >>> # expected output:
+        >>> # Collecting package metadata (current_repodata.json): done
+        >>> # Solving environment: done
+        >>> #
+        >>> # # All requested packages already installed.
+        """
+        assert env != 'base', \
+            "CincyConda cannot be used to install packages into the base environment."
+
+        # if an env is not provided, install the package into the current env, 
+        # unless the current env is the base env
+        assert env is not None and env != 'base', \
+            "CincyConda cannot be used to install packages into the base environment. \
+The current environment is the base environment, so please either activate a different \
+environment, or pass in an environment name to the Install method."
+
+        # if no package is provided, return
+        if package is None:
+            print("No package provided. Nothing to install.")
+            return
 
         # install the package
-        os.system(f"{self.conda} install --prefix {self.path} {package} -y")
+        subprocess.run([f"{self.conda}", "install", "--prefix", f"{self.path}",
+                        "-y", f"{package}"])
 
         # if the base env is not activated, activate it
         self._activate_base()
@@ -300,8 +389,9 @@ environment, use the conda command line tool."
 
     
 
-    def env(self,
-            name: str = None) -> Union[list, str]:
+    def Env(self,
+            name:str = None,
+            help:bool = False) -> Union[list, str]:
         """
         Returns the available conda environments in a python list
 
@@ -309,12 +399,14 @@ environment, use the conda command line tool."
         ----------
         name : str
             The name of the conda environment to return
+        help : bool, optional
+            Whether to print the help message, by default False
 
         Returns
         -------
         list
             A list of available conda environments
-
+        
         Raises
         ------
         AssertionError
@@ -355,6 +447,7 @@ environment, use the conda command line tool."
                     return envs
                 else:
                     raise AssertionError(f"Could not find environment: {name}")
+
     def Request(self, package:str = None):
         """
         Creates a request to add a package to the CincyPy channel. If no package is provided,
