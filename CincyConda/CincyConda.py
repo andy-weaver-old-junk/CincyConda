@@ -1,3 +1,24 @@
+"""
+This module implements the CincyConda class, which is used to manage conda environments
+on the Python/SAS server. It is intended to be used in a Jupyter notebook, but can also
+be used in a Python script.
+
+All the methods are opinionated wrappers around the conda command line interface.
+
+Methods
+-------
+Help
+    Prints documentation for the CincyConda class to the console, including a list of
+    methods. If a search term is provided, only prints the docstring for that method.
+    (not implemented yet)
+Setup
+    Runs the conda comands necessary to set up the CincyPy channel and the restricted
+    channel on the server. This method should only be run once, and will not work if
+    the CincyPy channel and restricted channel are already set up.
+
+
+"""
+
 import sys
 import os
 import subprocess
@@ -8,6 +29,17 @@ import pandas as pd
 from get_tech_contacts import get_tech_contacts
 
 CONDA_INSTALL_PATH = "/rsystem/Rapps/anaconda310/bin/conda"
+
+DEFAULT_PACKAGES = ['numpy',
+                    'pandas',
+                    'matplotlib',
+                    'seaborn',
+                    'scikit-learn',
+                    'scipy',
+                    'statsmodels',
+                    'jupyter',
+                    'notebook',
+                    'ipykernel']
 
 class CincyConda:
     def __init__(self,
@@ -25,8 +57,13 @@ class CincyConda:
         self.name = name
         self.path = path
 
-        # set the tech contacts
-        self.tech_contacts = get_tech_contacts()
+        # set the tech contacts (only works if the node server is running)
+        try:
+            self.tech_contacts = get_tech_contacts()
+        except Exception as e:
+            print("Could not get tech contacts. The node server may not be running:\n",
+                   e)
+            self.tech_contacts = None
 
         self.conda_envs = None
 
@@ -62,32 +99,42 @@ class CincyConda:
         -------
         None. Prints documentation to the console.
         """
-        # get the docstring
-        doc = get_docstring()
+        # # get the docstring
+        # doc = get_docstring()
 
-        # if no search term is provided, print the docstring
-        if search_term is None:
-            print(doc)
+        # # if no search term is provided, print the docstring
+        # if search_term is None:
+        #     print(doc)
 
-        # if a search term is provided, print the docstring for that method
-        else:
-            # get the docstring for the method
-            doc = doc.split(f"def {search_term}")[1].split('"""')[1]
+        # # if a search term is provided, print the docstring for that method
+        # else:
+        #     # get the docstring for the method
+        #     doc = doc.split(f"def {search_term}")[1].split('"""')[1]
 
-            # print the docstring
-            print(doc)
+        #     # print the docstring
+        #     print(doc)
 
     def Setup(self):
         """
         Does the unique setup steps for setting up anaconda on the jupyterhub server.
+
+        This method should only be run once, and will not work if the CincyPy channel
+        and restricted channel are already set up.
         """
+        # check that the CincyPy channel and restricted channel are not already set up
+        # get the list of channels
+        try:
+            channels = self._get_channels()
+        except Exception as _:
+            pass
+
         # initialize conda in the user's shell
         self.init(help=False)
 
         # close and re-open the shell
         subprocess.run([f'{self.shell}', '-c', 'exit'])
 
-        # list the commands to run
+        # list of commands to run
         cmd = [
             # clear the conda cache and channel list
             f"{self.conda} clean --all",
@@ -128,9 +175,11 @@ class CincyConda:
         -------
         None. Initializes conda in the user's shell.
 
-        
-
         Raises
+        ------
+        AssertionError
+            If the shell is not one of ['bash', 'zsh', 'fish', 'powershell', 'xonsh']
+        """
         # check the shell input
         assert self.shell in ['bash', 'zsh', 'fish', 'powershell', 'xonsh'], \
             f"shell: '{self.shell}' is not supported. Please use one of the following: \
@@ -147,38 +196,69 @@ class CincyConda:
     def Create(self,
                packages: list = None,
                help:bool = False) -> None:
+        """
+        Creates a new CincyConda environment. If no packages are provided, a default set
+        of packages is installed. If packages are provided, they are installed into the
+        environment.
+
+        Parameters
+        ----------
+        packages : list, optional
+            A list of packages to install in the environment, by default None. If no
+            packages are provided, a default set of packages is installed, see the 
+            constant DEFAULT_PACKAGES defined at the top of this file.
+        help : bool, optional
+            Whether to print the help message, by default False
+
+        Returns
+        -------
+        None. Creates a new CincyConda environment at the path indicated by self.path.
+              Should be installed into "./.env" in almost every case.
+
+        Raises
+        ------
+        AssertionError
+            If an environment already exists at self.path
+        AssertionError
+            If the package is not in the CincyPy channel
+        """
         # check to see whether or not an env already exists at self.path
         assert not os.path.exists(self.path), \
             f"An environment already exists at {self.path}. Please either use this env, or \
 delete it and create a new one."
-        if packages is None and self.packages is not None:
-            packages = self.packages
-        elif packages is not None and self.packages is None:
-            packages = packages
-        else:
-            packages = []
+
+        # if no packages are provided, use the default packages
+        if packages is None:
+            if self.packages is None:
+                packages = DEFAULT_PACKAGES
+            else:
+                packages = self.packages
+
+        # loop through the packages and check that they are in the CincyPy channel
+
+         # get the packages in the CincyPy channel
+        channel_packages = self._get_packages_in_channel()
 
         # loop through the packages and check that they are in the CincyPy channel
         for package in packages:
-            # get the packages in the CincyPy channel
-            packages = self._get_packages_in_channel()
-
-            # get the list of missing packages
-            missing_packages = [package for package in packages if package not in packages]
-
-            # check if the package is in the CincyPy channel
-            assert len(missing_packages) == 0, \
-                f"Package: {', '.join([p for p in missing_packages])} is not in the \
+            # check that the package is in the CincyPy channel
+            assert package in channel_packages, \
+                f"Package: {package} is not in the \
 CincyPy channel. Please use a package from the CincyPy channel, or submit a request \
 to add the package to the CincyPy channel using the Request method."
-
 
         # create the env with name=self.name and path=self.path
         os.system(f"{self.conda} create --prefix {self.path} -y")
 
-        # create the kernel
+        # install the packages
+        for package in packages:
+            self.Install(package=package)
+
+        # create the kernel - this is necessary for the notebook to recognize the env
         os.system(f"python -m ipykernel install --user --name {self.name} \
 --display-name {self.name}")
+
+
 
         # if the base env is not activated, activate it
         self._activate_base()
